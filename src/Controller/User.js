@@ -78,8 +78,9 @@ export const signin = async (req, res) => {
         .status(400)
         .json({ message: "Thông tin đăng nhập không hợp lệ" });
     }
-
-    if (!process.env.JWT_SECRET) {
+    const JWT_SECRET =
+      "76ca127f19145007f2723d48ce8cbf296fb7427ac4ffe557daa38952697dabb272c181f843bccfd89065158f44470be37eca0f6e6ba9da90a107f2dc0b90164a";
+    if (!JWT_SECRET) {
       console.error("JWT_SECRET is not set");
       return res
         .status(500)
@@ -88,7 +89,7 @@ export const signin = async (req, res) => {
 
     const accessToken = jwt.sign(
       { id: user._id, email: user.email },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: "7d" }
     );
 
