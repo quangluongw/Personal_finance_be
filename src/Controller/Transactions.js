@@ -2,13 +2,43 @@ import { TransactionsModel } from "../Model/Transactions";
 
 export const getTransaction = async (req, res) => {
   try {
-    const data = await TransactionsModel.find({ userId: req.params.id }).populate({
+    const { id } = req.params;
+    let query = { userId: id };
+
+    // Get current date and set default to current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
+
+    // Check if date range is provided in query parameters
+    if (req.query.startDate && req.query.endDate) {
+      query.createdAt = {
+        $gte: new Date(req.query.startDate),
+        $lte: new Date(req.query.endDate),
+      };
+    } else {
+      // Default to current month
+      query.createdAt = {
+        $gte: startOfMonth,
+        $lte: endOfMonth,
+      };
+    }
+
+    const data = await TransactionsModel.find(query).populate({
       path: "categoryId",
       select: "name",
     });
     return res.status(200).json(data);
   } catch (error) {
-    return res.status(500).json(error.message);
+    return res.status(500).json({ error: error.message });
   }
 };
 
