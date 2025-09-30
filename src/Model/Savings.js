@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const Savings = new mongoose({
+const Savings = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
