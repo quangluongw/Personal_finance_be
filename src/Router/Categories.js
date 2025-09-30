@@ -4,6 +4,6 @@ import { addCategories, deleteCategori, getCategori, updateCategori } from "../C
 const router = express.Router();
 router.get("/categories", getCategori);
 router.post("/addCategories", addCategories);
-router.patch("/updateCategories", updateCategori);
-router.delete("/deleteCategories", deleteCategori);
+router.patch("/updateCategories/:id", updateCategori);
+router.delete("/deleteCategories/:id", deleteCategori);
 export default router;
