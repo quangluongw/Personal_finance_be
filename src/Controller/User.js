@@ -1,5 +1,5 @@
 import { UserModel } from "../Model/User";
-import bcrypt from "bcryptjs";
+import bcrypt, { hash } from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { loginSchema, reqSchema } from "../Schema/User";
 export const signup = async (req, res) => {
@@ -52,7 +52,8 @@ export const signup = async (req, res) => {
       .json({ message: "Đăng ký thất bại", error: err.message });
   }
 };
-
+const JWT_SECRET =
+  "76ca127f19145007f2723d48ce8cbf296fb7427ac4ffe557daa38952697dabb272c181f843bccfd89065158f44470be37eca0f6e6ba9da90a107f2dc0b90164a";
 export const signin = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -63,40 +64,43 @@ export const signin = async (req, res) => {
       return res.status(400).json({ errors: list });
     }
 
-    const normalizedEmail = email?.trim().toLowerCase();
-
-    const user = await UserModel.findOne({ email: normalizedEmail }).lean();
+    const user = await UserModel.findOne({ email });
     if (!user) {
       return res
         .status(400)
         .json({ message: "Thông tin đăng nhập không hợp lệ" });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res
         .status(400)
         .json({ message: "Thông tin đăng nhập không hợp lệ" });
     }
-    const JWT_SECRET =
-      "76ca127f19145007f2723d48ce8cbf296fb7427ac4ffe557daa38952697dabb272c181f843bccfd89065158f44470be37eca0f6e6ba9da90a107f2dc0b90164a";
-    if (!JWT_SECRET) {
-      console.error("JWT_SECRET is not set");
-      return res
-        .status(500)
-        .json({ message: "Cấu hình server chưa hoàn chỉnh" });
-    }
 
     const accessToken = jwt.sign(
-      { id: user._id, email: user.email },
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      {
+        expiresIn: "7d",
+      }
     );
 
-    const { password: _pwd, ...sanitizedUser } = user;
+
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 1 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
 
     return res.status(200).json({
-      user: sanitizedUser,
+      user,
       token: accessToken,
       message: "Đăng nhập thành công",
     });
@@ -150,3 +154,47 @@ export const deleteUser = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+
+export const checkout = async (req, res, next) => {
+  try {
+    const token = req.cookies?.accessToken;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Access token missing in cookies",
+      });
+    }
+
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+      if (err) {
+        if (err.name === "TokenExpiredError") {
+          return res.status(401).json({
+            success: false,
+            message: "Token expired",
+          });
+        } else if (err.name === "JsonWebTokenError") {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid token",
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: "Token verification failed",
+          });
+        }
+      }
+      // Attach decoded user to request
+      req.user = decoded;
+      next();
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+

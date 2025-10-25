@@ -7,6 +7,7 @@ import budgetRouter from "./Router/Budgets";
 import transactionRouter from "./Router/Transactions";
 import savingRouter from "./Router/Savings";
 import { ConnectDb } from "./Config/Db";
+import cookieParser from "cookie-parser";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"], // Headers được phép
   })
 );
+  app.use(cookieParser());
 
 app.use(express.json());
 
@@ -30,5 +32,5 @@ app.use("/api", categoriesRouter);
 app.use("/api", transactionRouter);
 app.use("/api", savingRouter);
 
-// export const viteNodeApp = app;
-export default app;
+export const viteNodeApp = app;
+// export default app;
