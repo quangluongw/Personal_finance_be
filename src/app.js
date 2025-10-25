@@ -14,7 +14,7 @@ const app = express();
 // Cấu hình CORS
 app.use(
   cors({
-    origin: "http://localhost:5173", // URL của frontend
+    origin: "https://personal-finance-fe-gules.vercel.app", // URL của frontend
     credentials: true, // Cho phép gửi cookies
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"], // Các methods được phép
     allowedHeaders: ["Content-Type", "Authorization"], // Headers được phép
