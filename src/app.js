@@ -32,5 +32,5 @@ app.use("/api", categoriesRouter);
 app.use("/api", transactionRouter);
 app.use("/api", savingRouter);
 
-export const viteNodeApp = app;
-// export default app;
+// export const viteNodeApp = app;
+export default app;
