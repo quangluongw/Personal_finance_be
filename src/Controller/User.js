@@ -105,6 +105,7 @@ export const signin = async (req, res) => {
     // 6️⃣ Response
     return res.status(200).json({
       message: "Đăng nhập thành công",
+      token:accessToken,
       user: {
         id: user._id,
         email: user.email,
