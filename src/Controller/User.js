@@ -54,30 +54,36 @@ export const signup = async (req, res) => {
 };
 const JWT_SECRET =
   "76ca127f19145007f2723d48ce8cbf296fb7427ac4ffe557daa38952697dabb272c181f843bccfd89065158f44470be37eca0f6e6ba9da90a107f2dc0b90164a";
+
 export const signin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // 1️⃣ Validate dữ liệu
     const { error } = loginSchema.validate(req.body, { abortEarly: false });
     if (error) {
-      const list = error.details.map((issue) => ({ message: issue.message }));
-      return res.status(400).json({ errors: list });
+      return res.status(400).json({
+        errors: error.details.map((e) => ({ message: e.message })),
+      });
     }
 
-    const user = await UserModel.findOne({ email });
+    // 2️⃣ Check user
+    const user = await UserModel.findOne({ email }).select("+password");
     if (!user) {
       return res
         .status(400)
         .json({ message: "Thông tin đăng nhập không hợp lệ" });
     }
 
-const isMatch = await bcrypt.compare(password, user.password);
+    // 3️⃣ Check password
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res
         .status(400)
         .json({ message: "Thông tin đăng nhập không hợp lệ" });
     }
 
+    // 4️⃣ Tạo JWT
     const accessToken = jwt.sign(
       {
         id: user._id,
@@ -85,24 +91,25 @@ const isMatch = await bcrypt.compare(password, user.password);
         role: user.role,
       },
       JWT_SECRET,
-      {
-        expiresIn: "7d",
-      }
+      { expiresIn: "7d" }
     );
 
-
+    // 5️⃣ Set cookie (⭐ QUAN TRỌNG)
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: "strict",
-      maxAge: 1 * 24 * 60 * 60 * 1000,
-      path: "/",
+      secure: true, // production bắt buộc HTTPS
+      sameSite: "none", // FE & BE khác domain
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // 6️⃣ Response
     return res.status(200).json({
-      user,
-      token: accessToken,
       message: "Đăng nhập thành công",
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (error) {
     console.error("Signin error:", error);
@@ -155,7 +162,6 @@ export const deleteUser = async (req, res) => {
   }
 };
 
-
 export const checkout = async (req, res, next) => {
   try {
     const token = req.cookies?.accessToken;
@@ -197,4 +203,3 @@ export const checkout = async (req, res, next) => {
     });
   }
 };
-
