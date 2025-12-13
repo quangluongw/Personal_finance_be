@@ -12,7 +12,7 @@ import {
 const router = express.Router();
 router.post("/register", signup);
 router.post("/login", signin);
-router.get("/user/:id", checkout, getUser);
+router.get("/user/:id", getUser);
 router.get("/me", checkout, getMe);
 router.patch("/user/:id", updateUser);
 router.delete("/user/:id", deleteUser);
