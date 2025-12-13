@@ -203,3 +203,21 @@ export const checkout = async (req, res, next) => {
     });
   }
 };
+
+export const getMe = async (req, res) => {
+  try {
+    // req.user đã được gán từ middleware
+    return res.status(200).json({
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+      },
+    });
+  } catch (error) {
+    console.error("GetMe error:", error);
+    return res.status(500).json({
+      message: "Lỗi máy chủ",
+    });
+  }
+};
