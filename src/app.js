@@ -14,13 +14,13 @@ const app = express();
 // Cấu hình CORS
 app.use(
   cors({
-    origin: "https://personal-finance-fe-gules.vercel.app", // URL của frontend
+    origin: "http://localhost:5173", // URL của frontend
     credentials: true, // Cho phép gửi cookies
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"], // Các methods được phép
     allowedHeaders: ["Content-Type", "Authorization"], // Headers được phép
   })
 );
-  app.use(cookieParser());
+app.use(cookieParser());
 
 app.use(express.json());
 
