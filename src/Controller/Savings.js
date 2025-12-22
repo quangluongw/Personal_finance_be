@@ -2,12 +2,62 @@ import { SavingsModel } from "../Model/Savings";
 
 export const getSaving = async (req, res) => {
   try {
-    const data = await SavingsModel.find({ userId: req.params.id });
-    return res.status(200).json(data);
+    const userId = req.params.id;
+
+    const savings = await SavingsModel.find({ userId });
+
+    let totalSaved = 0;
+    let totalTarget = 0;
+    let completedCount = 0;
+
+    const savingsData = savings.map((item) => {
+      const progressPercent = Math.round(
+        (item.currentAmount / item.targetAmount) * 100
+      );
+
+      const remainingAmount = item.targetAmount - item.currentAmount;
+
+      let status = "Đang tiến hành";
+      if (progressPercent >= 100) {
+        status = "Hoàn thành";
+        completedCount++;
+      } else if (progressPercent >= 70) {
+        status = "Gần hoàn thành";
+      }
+
+      totalSaved += item.currentAmount;
+      totalTarget += item.targetAmount;
+
+      return {
+        id: item._id,
+        name: item.name,
+        description: item.description,
+        currentAmount: item.currentAmount,
+        targetAmount: item.targetAmount,
+        remainingAmount,
+        progressPercent,
+        status,
+      };
+    });
+
+    const overallProgress =
+      totalTarget === 0 ? 0 : Math.round((totalSaved / totalTarget) * 100);
+
+    return res.status(200).json({
+      summary: {
+        totalSaved,
+        totalTarget,
+        overallProgress,
+        completedCount,
+        totalCount: savings.length,
+      },
+      savings: savingsData,
+    });
   } catch (error) {
-    return res.status(500).json(error.message);
+    return res.status(500).json({ message: error.message });
   }
 };
+
 
 export const addSaving = async (req, res) => {
   try {
