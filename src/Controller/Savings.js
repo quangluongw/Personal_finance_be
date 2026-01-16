@@ -24,9 +24,11 @@ export const addSaving = async (req, res) => {
 
 export const updateSaving = async (req, res) => {
   try {
-    await SavingsModel.findByIdAndUpdate(req.id.params, req.body, {
-      new: true,
-    });
+    await SavingsModel.findByIdAndUpdate(
+      req.params.id, // ✅ đúng
+      req.body,
+      { new: true }
+    );
 
     return res.status(200).json({
       message: "Cập nhật mục tiêu tiết kiệm thành công",
@@ -35,6 +37,7 @@ export const updateSaving = async (req, res) => {
     return res.status(500).json(error.message);
   }
 };
+
 
 export const deleteSaving = async (req, res) => {
   try {

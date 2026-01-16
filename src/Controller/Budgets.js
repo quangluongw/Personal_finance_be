@@ -55,7 +55,7 @@ export const addBudget = async (req, res) => {
 
 export const updateBudget = async (req, res) => {
   try {
-    await BudgetsModel.findByIdAndUpdate(req.id.params, req.body, {
+    await BudgetsModel.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
 

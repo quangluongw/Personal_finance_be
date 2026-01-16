@@ -159,7 +159,7 @@ export const addTransaction = async (req, res) => {
 
 export const updateTransaction = async (req, res) => {
   try {
-    await TransactionsModel.findByIdAndUpdate(req.id.params, req.body, {
+    await TransactionsModel.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
 

@@ -23,7 +23,7 @@ export const addCategories = async (req, res) => {
 
 export const updateCategori = async (req, res) => {
   try {
-    await CategoriesModel.findByIdAndUpdate(req.id.params, req.body, {
+    await CategoriesModel.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
 
