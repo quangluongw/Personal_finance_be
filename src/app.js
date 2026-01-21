@@ -37,5 +37,5 @@ app.use("/api", transactionRouter);
 app.use("/api", savingRouter);
 app.use("/api", dashRouter);
 
-export const viteNodeApp = app;
-// export default app;
+// export const viteNodeApp = app;
+export default app;
