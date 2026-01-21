@@ -6,6 +6,7 @@ import categoriesRouter from "./Router/Categories";
 import budgetRouter from "./Router/Budgets";
 import transactionRouter from "./Router/Transactions";
 import savingRouter from "./Router/Savings";
+import dashRouter from "./Router/Dashboard";
 import { ConnectDb } from "./Config/Db";
 import cookieParser from "cookie-parser";
 
@@ -34,6 +35,7 @@ app.use("/api", budgetRouter);
 app.use("/api", categoriesRouter);
 app.use("/api", transactionRouter);
 app.use("/api", savingRouter);
+app.use("/api", dashRouter);
 
-// export const viteNodeApp = app;
-export default app;
+export const viteNodeApp = app;
+// export default app;
