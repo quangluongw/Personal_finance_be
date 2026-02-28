@@ -1,3 +1,4 @@
+import { AccountsModel } from "../Model/Accounts";
 import { TransactionsModel } from "../Model/Transactions";
 
 export const getTransaction = async (req, res) => {
@@ -89,7 +90,7 @@ export const totalTransaction = async (req, res) => {
     if (req.query.categoryId) {
       query.categoryId = req.query.categoryId;
     }
-    
+
     // Filter by month if provided (format: "MM/YYYY")
     if (req.query.month) {
       const monthStr = req.query.month.trim();
@@ -147,7 +148,28 @@ export const totalTransaction = async (req, res) => {
 
 export const addTransaction = async (req, res) => {
   try {
+    const { accPay, amount, transactionType } = req.body;
+
+    const account = await AccountsModel.findById(accPay);
+
+    if (!account) {
+      return res.status(404).json("Account not found");
+    }
+
+    // nếu là chi tiêu thì check tiền
+    if (transactionType === "expense" && account.balance < amount) {
+      return res.status(400).json("Không đủ số dư");
+    }
+
     const data = await TransactionsModel(req.body).save();
+
+    // cộng hoặc trừ tiền
+    const updateAmount = transactionType === "income" ? amount : -amount;
+
+    await AccountsModel.findByIdAndUpdate(accPay, {
+      $inc: { balance: updateAmount },
+    });
+
     return res.status(201).json({
       message: "Thêm giao dịch thành công",
       data,
@@ -179,5 +201,18 @@ export const deleteTransaction = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
+  }
+};
+export const deleteAllTransactions = async (req, res) => {
+  try {
+    await TransactionsModel.deleteMany({}); // xóa tất cả document
+
+    return res.status(200).json({
+      message: "Đã xóa toàn bộ giao dịch",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
   }
 };

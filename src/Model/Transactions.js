@@ -29,6 +29,12 @@ const Transactions = new mongoose.Schema({
     require: true,
   },
 
+  accPay: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Accounts",
+    require: true,
+  },
+
   createdAt: {
     type: Date,
     default: Date.now,
