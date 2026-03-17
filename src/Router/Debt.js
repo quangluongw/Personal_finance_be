@@ -5,12 +5,10 @@ import {
   deleteDebt,
   getDebtDetail,
   getDebtList,
-  getSummaryDept,
 } from "../Controller/Debt";
 
 const router = express.Router();
 
-router.get("/dept/summary/:id", getSummaryDept);
 router.get("/dept/:id", getDebtList);
 router.get("/dept/:id", getDebtDetail);
 router.post("/dept/:id/transactions", addTransactionDebt);

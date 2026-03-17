@@ -1,55 +1,6 @@
 import { DebtModel } from "../Model/Debt";
 
 /**
- * 1. DASHBOARD SUMMARY
- * GET /api/debts/summary/:userId
- */
-export const getSummaryDept = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const debts = await DebtModel.find({
-      userId,
-      status: "active",
-    });
-
-    const lending = debts.filter((d) => d.type === "lending");
-    const borrowing = debts.filter((d) => d.type === "borrowing");
-
-    const sum = (arr, key) => arr.reduce((t, i) => t + i[key], 0);
-
-    const lendingTotal = sum(lending, "amount");
-    const lendingPaid = sum(lending, "paidAmount");
-
-    const borrowingTotal = sum(borrowing, "amount");
-    const borrowingPaid = sum(borrowing, "paidAmount");
-
-    res.json({
-      lending: {
-        total: lendingTotal,
-        paid: lendingPaid,
-        remain: lendingTotal - lendingPaid,
-        percent: lendingTotal
-          ? Math.round((lendingPaid / lendingTotal) * 100)
-          : 0,
-      },
-      borrowing: {
-        total: borrowingTotal,
-        paid: borrowingPaid,
-        remain: borrowingTotal - borrowingPaid,
-        percent: borrowingTotal
-          ? Math.round((borrowingPaid / borrowingTotal) * 100)
-          : 0,
-      },
-      netAsset: lendingTotal - lendingPaid - (borrowingTotal - borrowingPaid),
-      activeCount: debts.length,
-    });
-  } catch (e) {
-    res.status(500).json({ message: e.message });
-  }
-};
-
-/**
  * 2. LIST PHẢI THU / PHẢI TRẢ
  * GET /api/debts/:userId?type=lending|borrowing
  */
@@ -58,23 +9,67 @@ export const getDebtList = async (req, res) => {
     const { userId } = req.params;
     const { type } = req.query;
 
-    const debts = await DebtModel.find({
+    const query = {
       userId,
-      type,
       status: "active",
-    }).sort({ createdAt: -1 });
+    };
 
-    res.json(
-      debts.map((d) => ({
-        id: d._id,
-        person: d.person,
-        description: d.description,
-        avatarColor: d.avatarColor,
-        total: d.amount,
-        paid: d.paidAmount,
-        remain: d.amount - d.paidAmount,
-      }))
-    );
+    if (type) {
+      query.type = type; // optional filter
+    }
+
+    const debts = await DebtModel.find(query).sort({ createdAt: -1 });
+
+    // 👉 LIST
+    const list = debts.map((d) => ({
+      id: d._id,
+      person: d.person,
+      description: d.description,
+      total: d.amount,
+      paid: d.paidAmount,
+      remain: d.amount - d.paidAmount,
+      type: d.type,
+    }));
+
+    // 👉 SUMMARY
+    let totalLend = 0; // đang cho vay
+    let totalBorrow = 0; // đang nợ
+    let totalPaidLend = 0;
+    let totalPaidBorrow = 0;
+
+    debts.forEach((d) => {
+      if (d.type === "lend") {
+        totalLend += d.amount;
+        totalPaidLend += d.paidAmount;
+      } else if (d.type === "borrow") {
+        totalBorrow += d.amount;
+        totalPaidBorrow += d.paidAmount;
+      }
+    });
+
+    const netAsset = totalLend - totalBorrow;
+
+    res.json({
+      summary: {
+        lend: {
+          total: totalLend,
+          paid: totalPaidLend,
+          percent: totalLend
+            ? Math.round((totalPaidLend / totalLend) * 100)
+            : 0,
+        },
+        borrow: {
+          total: totalBorrow,
+          paid: totalPaidBorrow,
+          percent: totalBorrow
+            ? Math.round((totalPaidBorrow / totalBorrow) * 100)
+            : 0,
+        },
+        netAsset,
+        activeCount: debts.length,
+      },
+      list,
+    });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

@@ -11,8 +11,6 @@ const debt = new mongoose.Schema(
       type: String,
       required: true,
     },
-    phone: String,
-    avatarColor: String,
     amount: {
       type: Number,
       required: true,
