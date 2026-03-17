@@ -38,10 +38,10 @@ export const getDebtList = async (req, res) => {
     let totalPaidBorrow = 0;
 
     debts.forEach((d) => {
-      if (d.type === "lend") {
+      if (d.type === "lending") {
         totalLend += d.amount;
         totalPaidLend += d.paidAmount;
-      } else if (d.type === "borrow") {
+      } else if (d.type === "borrowing") {
         totalBorrow += d.amount;
         totalPaidBorrow += d.paidAmount;
       }
