@@ -60,6 +60,10 @@ export const getTransaction = async (req, res) => {
         path: "categoryId",
         select: "name",
       })
+      .populate({
+        path: "accPay",
+        select: "name ",
+      })
       .sort({ createdAt: -1 }); // Sort by newest first
 
     return res.status(200).json({
@@ -148,7 +152,7 @@ export const totalTransaction = async (req, res) => {
 
 export const addTransaction = async (req, res) => {
   try {
-    const { accPay, amount, transactionType } = req.body;
+    const { accPay, amount, transactionType, categoryId } = req.body;
 
     const account = await AccountsModel.findById(accPay);
 

@@ -6,21 +6,19 @@ import { DebtModel } from "../Model/Debt";
  */
 export const getDebtList = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { id } = req.params;
     const { type } = req.query;
 
     const query = {
-      userId,
-      status: "active",
+      userId: id,
     };
 
     if (type) {
-      query.type = type; // optional filter
+      query.type = type;
     }
 
     const debts = await DebtModel.find(query).sort({ createdAt: -1 });
 
-    // 👉 LIST
     const list = debts.map((d) => ({
       id: d._id,
       person: d.person,
@@ -29,11 +27,19 @@ export const getDebtList = async (req, res) => {
       paid: d.paidAmount,
       remain: d.amount - d.paidAmount,
       type: d.type,
+      createdAt: d.createdAt,
+
+      transactions: d.transactions.map((t) => ({
+        amount: t.amount,
+        note: t.note,
+        type: t.type,
+        date: t.createdAt || t.date,
+      })),
     }));
 
-    // 👉 SUMMARY
-    let totalLend = 0; // đang cho vay
-    let totalBorrow = 0; // đang nợ
+    // summary
+    let totalLend = 0;
+    let totalBorrow = 0;
     let totalPaidLend = 0;
     let totalPaidBorrow = 0;
 
@@ -41,7 +47,9 @@ export const getDebtList = async (req, res) => {
       if (d.type === "lending") {
         totalLend += d.amount;
         totalPaidLend += d.paidAmount;
-      } else if (d.type === "borrowing") {
+      }
+
+      if (d.type === "borrowing") {
         totalBorrow += d.amount;
         totalPaidBorrow += d.paidAmount;
       }
@@ -71,7 +79,9 @@ export const getDebtList = async (req, res) => {
       list,
     });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({
+      message: e.message,
+    });
   }
 };
 
@@ -106,14 +116,30 @@ export const getDebtDetail = async (req, res) => {
  */
 export const createDebt = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { paidAmount, description, ...rest } = req.body;
 
-    const debt = await DebtModel.create({
-      ...req.body,
-      userId,
+    const debtData = {
+      ...rest,
+    };
+
+    // nếu có paidAmount > 0 thì thêm transaction
+    if (paidAmount && paidAmount > 0) {
+      debtData.paidAmount = paidAmount;
+      debtData.transactions = [
+        {
+          amount: paidAmount,
+          note: description || "Thanh toán ban đầu",
+          date: new Date(),
+        },
+      ];
+    }
+
+    const debt = await DebtModel.create(debtData);
+
+    return res.status(201).json({
+      message: "Thêm thành công",
+      debt,
     });
-
-    res.status(201).json(debt);
   } catch (e) {
     res.status(400).json({ message: e.message });
   }
@@ -123,37 +149,46 @@ export const createDebt = async (req, res) => {
  * 5. THÊM GIAO DỊCH TRẢ / THU
  * POST /api/debts/transaction/:userId/:debtId
  */
-export const addTransactionDebt = async (req, res) => {
+export const updateTransactionDebt = async (req, res) => {
   try {
-    const { userId, debtId } = req.params;
-    const { amount, date, note } = req.body;
+    const { id } = req.params;
+    let { amount, note, action } = req.body;
+    // Validate
+    action = action || "payment";
+    amount = Number(amount);
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ message: "Số tiền không hợp lệ" });
+    }
 
-    const debt = await DebtModel.findOne({
-      _id: debtId,
-      userId,
-    });
+    const debt = await DebtModel.findById(id);
+    const remain = debt.amount - debt.paidAmount;
 
     if (!debt) {
-      return res.status(404).json({ message: "Debt not found" });
+      return res.status(404).json({ message: "Không có khoản này" });
     }
 
+    if (action === "payment") {
+      if (remain < amount) {
+        return res.status(400).json({ message: "Số dư không đủ" });
+      }
+      debt.paidAmount = debt.paidAmount + amount;
+    } else {
+      debt.amount += amount;
+    }
     debt.transactions.push({
-      date,
       amount,
-      type: "payment",
-      note,
+      note: note || "",
+      date: new Date(), // optional vì đã có default
     });
 
-    debt.paidAmount += amount;
-
-    if (debt.paidAmount >= debt.amount) {
-      debt.status = "completed";
-    }
-
     await debt.save();
-    res.json(debt);
-  } catch (e) {
-    res.status(400).json({ message: e.message });
+
+    return res.json({
+      message: "Cập nhật thành công",
+      data: debt,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -163,7 +198,6 @@ export const addTransactionDebt = async (req, res) => {
  */
 export const deleteDebt = async (req, res) => {
   try {
-
     await DebtModel.findByIdAndDelete(req.params.id);
 
     res.json({ message: "Deleted successfully" });
