@@ -3,20 +3,56 @@ import { TransactionsModel } from "../Model/Transactions";
 
 export const createAccount = async (req, res) => {
   try {
-    const { userId, balance, name } = req.body;
+    const {
+      userId,
+      name,
+      balance,
+      type,
+      accountNumber,
+      icon,
+      color,
+      change,
+      isPrimary,
+      linkedAccounts,
+      lastTransaction,
+    } = req.body;
 
-    // kiểm tra dữ liệu
-    if (!userId || !balance || !name) {
+    // validate cơ bản
+    if (!userId || !name) {
       return res.status(400).json({
-        message: "Thiếu dữ liệu",
+        message: "Thiếu userId hoặc name",
       });
     }
 
+    if (balance === undefined || balance === null) {
+      return res.status(400).json({
+        message: "Thiếu balance",
+      });
+    }
+
+    // tạo account
     const newAccount = new AccountsModel({
       userId,
-      balance,
       name,
+      balance,
+
+      type: type || "bank",
+      accountNumber,
+      icon,
+      color,
+      change: change ?? 0,
+      isPrimary: isPrimary ?? false,
+      linkedAccounts: linkedAccounts ?? 0,
+      lastTransaction: lastTransaction ? new Date(lastTransaction) : null,
     });
+
+    // nếu là tài khoản chính → reset các tài khoản khác
+    if (isPrimary) {
+      await AccountsModel.updateMany(
+        { userId },
+        { $set: { isPrimary: false } }
+      );
+    }
 
     const data = await newAccount.save();
 
