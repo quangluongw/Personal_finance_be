@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { AccountsModel } from "../Model/Accounts";
 import { TransactionsModel } from "../Model/Transactions";
 
@@ -68,13 +69,19 @@ export const createAccount = async (req, res) => {
   }
 };
 
+
 export const getAccounts = async (req, res) => {
   try {
-    const accounts = await AccountsModel.find({ userId: req.params.id });
+    const userId = req.params.id;
+
+    // ===== validate userId =====
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "userId không hợp lệ" });
+    }
 
     const now = new Date();
 
-    // ===== Lấy giao dịch trong tháng hiện tại =====
+    // ===== time range tháng hiện tại =====
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(
       now.getFullYear(),
@@ -86,77 +93,81 @@ export const getAccounts = async (req, res) => {
       999
     );
 
-    const transactions = await TransactionsModel.find({
-      userId: req.params.id,
-      createdAt: { $gte: startOfMonth, $lte: endOfMonth },
-    });
+    // ===== query song song =====
+    const [accounts, transactions] = await Promise.all([
+      AccountsModel.find({ userId }).lean(),
+      TransactionsModel.find({
+        userId,
+        createdAt: { $gte: startOfMonth, $lte: endOfMonth },
+      }).lean(),
+    ]);
 
-    // ===== Tính thu nhập & chi tiêu tháng này =====
+    // ===== tính toán transaction =====
     let monthlyIncome = 0;
     let monthlyExpense = 0;
 
-    transactions.forEach((tx) => {
+    for (const tx of transactions) {
       if (tx.transactionType === "income") {
         monthlyIncome += tx.amount;
       } else if (tx.transactionType === "expense") {
         monthlyExpense += tx.amount;
       }
-    });
+    }
 
     const monthlySaving = monthlyIncome - monthlyExpense;
     const totalTransactions = transactions.length;
 
-    // ===== Format danh sách tài khoản =====
-    const formattedAccounts = accounts.map((acc) => {
-      const lastMonthBalance = acc.lastMonthBalance || acc.balance;
-      const monthlyChange =
-        lastMonthBalance === 0
-          ? 0
-          : ((acc.balance - lastMonthBalance) / lastMonthBalance) * 100;
+    // ===== format accounts =====
+    const formattedAccounts = accounts.map((acc) => ({
+      _id: acc._id,
+      name: acc.name,
+      type: acc.type,
+      accountNumber: acc.accountNumber,
+      balance: acc.balance,
 
-      return {
-        _id: acc._id,
-        bankName: acc.name,
-        accountNumber: acc.accountNumber,
-        balance: acc.balance,
-        monthlyChange: Number(monthlyChange.toFixed(2)),
-      };
-    });
+      icon: acc.icon,
+      color: acc.color,
 
-    // ===== Tổng tài sản =====
+      change: acc.change ?? 0,
+      isPrimary: acc.isPrimary ?? false,
+      linkedAccounts: acc.linkedAccounts ?? 0,
+
+      lastTransaction: acc.lastTransaction,
+    }));
+
+    // ===== tổng tài sản =====
     const totalAssets = formattedAccounts.reduce(
       (sum, acc) => sum + (acc.balance || 0),
       0
     );
 
-    // ===== Trung bình % thay đổi =====
+    // ===== % thay đổi trung bình =====
     const monthlyChangePercent =
-      formattedAccounts.reduce(
-        (sum, acc) => sum + (acc.monthlyChange || 0),
-        0
-      ) / (formattedAccounts.length || 1);
+      formattedAccounts.reduce((sum, acc) => sum + (acc.change || 0), 0) /
+      (formattedAccounts.length || 1);
 
     const data = {
       summary: {
         totalAssets,
         totalAccounts: formattedAccounts.length,
         monthlyChangePercent: Number(monthlyChangePercent.toFixed(2)),
-        // ===== Dữ liệu mới từ Transactions =====
-        monthlyIncome, // Thu nhập tháng này   (+72M)
-        monthlyExpense, // Chi tiêu tháng này   (-48M)
-        monthlySaving, // Tiết kiệm            (+24M)
-        totalTransactions, // Số giao dịch         (1,165)
-        updatedAt: new Date().toLocaleTimeString("vi-VN", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+
+        monthlyIncome,
+        monthlyExpense,
+        monthlySaving,
+        totalTransactions,
+
+        updatedAt: new Date().toISOString(),
       },
       accounts: formattedAccounts,
     };
 
     return res.status(200).json(data);
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: "Lỗi server",
+      error: error.message,
+    });
   }
 };
 
