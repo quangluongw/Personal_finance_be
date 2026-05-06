@@ -28,9 +28,6 @@ const Accounts = new mongoose.Schema({
     type: String,
   },
 
-  icon: {
-    type: String, // lưu tên icon, ví dụ: "Landmark"
-  },
 
   color: {
     type: String, // ví dụ: "from-blue-600 to-blue-700"

@@ -73,14 +73,11 @@ export const createAccount = async (req, res) => {
 export const getAccounts = async (req, res) => {
   try {
     const userId = req.params.id;
-
     // ===== validate userId =====
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ message: "userId không hợp lệ" });
     }
-
     const now = new Date();
-
     // ===== time range tháng hiện tại =====
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(
@@ -92,7 +89,6 @@ export const getAccounts = async (req, res) => {
       59,
       999
     );
-
     // ===== query song song =====
     const [accounts, transactions] = await Promise.all([
       AccountsModel.find({ userId }).lean(),
@@ -101,11 +97,9 @@ export const getAccounts = async (req, res) => {
         createdAt: { $gte: startOfMonth, $lte: endOfMonth },
       }).lean(),
     ]);
-
     // ===== tính toán transaction =====
     let monthlyIncome = 0;
     let monthlyExpense = 0;
-
     for (const tx of transactions) {
       if (tx.transactionType === "income") {
         monthlyIncome += tx.amount;
@@ -113,10 +107,8 @@ export const getAccounts = async (req, res) => {
         monthlyExpense += tx.amount;
       }
     }
-
     const monthlySaving = monthlyIncome - monthlyExpense;
     const totalTransactions = transactions.length;
-
     // ===== format accounts =====
     const formattedAccounts = accounts.map((acc) => ({
       _id: acc._id,
@@ -124,44 +116,61 @@ export const getAccounts = async (req, res) => {
       type: acc.type,
       accountNumber: acc.accountNumber,
       balance: acc.balance,
-
       icon: acc.icon,
       color: acc.color,
-
       change: acc.change ?? 0,
       isPrimary: acc.isPrimary ?? false,
       linkedAccounts: acc.linkedAccounts ?? 0,
-
       lastTransaction: acc.lastTransaction,
     }));
-
     // ===== tổng tài sản =====
     const totalAssets = formattedAccounts.reduce(
       (sum, acc) => sum + (acc.balance || 0),
       0
     );
-
     // ===== % thay đổi trung bình =====
     const monthlyChangePercent =
       formattedAccounts.reduce((sum, acc) => sum + (acc.change || 0), 0) /
       (formattedAccounts.length || 1);
+
+    // ===== phân bố tài sản theo loại tài khoản =====
+    const assetDistributionMap = {};
+    for (const acc of formattedAccounts) {
+      const type = acc.type || "Khác";
+      if (!assetDistributionMap[type]) {
+        assetDistributionMap[type] = {
+          type,
+          name: acc.name,
+          color: acc.color,
+          totalBalance: 0,
+        };
+      }
+      assetDistributionMap[type].totalBalance += acc.balance || 0;
+    }
+    const assetDistribution = Object.values(assetDistributionMap).map(
+      (item) => ({
+        ...item,
+        percentage:
+          totalAssets > 0
+            ? Number(((item.totalBalance / totalAssets) * 100).toFixed(2))
+            : 0,
+      })
+    );
 
     const data = {
       summary: {
         totalAssets,
         totalAccounts: formattedAccounts.length,
         monthlyChangePercent: Number(monthlyChangePercent.toFixed(2)),
-
         monthlyIncome,
         monthlyExpense,
         monthlySaving,
         totalTransactions,
-
         updatedAt: new Date().toISOString(),
       },
+      assetDistribution, // 👈 thêm vào đây
       accounts: formattedAccounts,
     };
-
     return res.status(200).json(data);
   } catch (error) {
     return res.status(500).json({
