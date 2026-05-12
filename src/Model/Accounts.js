@@ -28,11 +28,6 @@ const Accounts = new mongoose.Schema({
     type: String,
   },
 
-
-  color: {
-    type: String, // ví dụ: "from-blue-600 to-blue-700"
-  },
-
   change: {
     type: Number, // % thay đổi
     default: 0,
