@@ -23,24 +23,21 @@ const Accounts = new mongoose.Schema({
     required: true,
     default: 0,
   },
-
+  icon: {
+    type: String, 
+  },
   accountNumber: {
     type: String,
   },
 
   change: {
-    type: Number, // % thay đổi
+    type: Number,
     default: 0,
   },
 
   isPrimary: {
     type: Boolean,
     default: false,
-  },
-
-  linkedAccounts: {
-    type: Number,
-    default: 0,
   },
 
   lastTransaction: {
