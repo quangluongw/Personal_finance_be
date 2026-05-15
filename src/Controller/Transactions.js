@@ -162,7 +162,9 @@ export const addTransaction = async (req, res) => {
 
     // nếu là chi tiêu thì check tiền
     if (transactionType === "expense" && account.balance < amount) {
-      return res.status(400).json("Không đủ số dư");
+      return res.status(400).json({
+        message: "Không đủ số dư",
+      });
     }
 
     const data = await TransactionsModel(req.body).save();

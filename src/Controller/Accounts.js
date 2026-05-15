@@ -219,10 +219,57 @@ export const updateAccount = async (req, res) => {
 
 export const deleteAccount = async (req, res) => {
   try {
-    await AccountsModel.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
 
-    return res.status(200).json("Delete success");
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "accountId không hợp lệ" });
+    }
+
+    const account = await AccountsModel.findById(id).lean();
+    if (!account) {
+      return res.status(404).json({ message: "Tài khoản không tồn tại" });
+    }
+
+    // ===== Xóa song song account + toàn bộ transactions liên quan =====
+    await Promise.all([
+      AccountsModel.findByIdAndDelete(id),
+      TransactionsModel.deleteMany({ accountId: id }),
+    ]);
+
+    return res.status(200).json({
+      message: "Xóa tài khoản và toàn bộ dữ liệu liên quan thành công",
+      deletedAccountId: id,
+    });
   } catch (error) {
-    return res.status(500).json(error.message);
+    console.error("[deleteAccount]", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server", error: error.message });
+  }
+};
+export const deleteAllAccounts = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "userId không hợp lệ" });
+    }
+
+    // ===== Xóa song song toàn bộ accounts + transactions của user =====
+    const [deletedAccounts, deletedTransactions] = await Promise.all([
+      AccountsModel.deleteMany({ userId }),
+      TransactionsModel.deleteMany({ userId }),
+    ]);
+
+    return res.status(200).json({
+      message: "Xóa toàn bộ tài khoản và dữ liệu liên quan thành công",
+      deletedAccounts: deletedAccounts.deletedCount,
+      deletedTransactions: deletedTransactions.deletedCount,
+    });
+  } catch (error) {
+    console.error("[deleteAllAccounts]", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server", error: error.message });
   }
 };
