@@ -42,4 +42,4 @@ app.use("/api", deptRouter);
 app.use("/api", AccountRouter);
 
 // export const viteNodeApp = app;
-export default app;
+export default app; 
