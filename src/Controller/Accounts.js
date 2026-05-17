@@ -195,12 +195,117 @@ export const getAccounts = async (req, res) => {
 
 export const getAccountById = async (req, res) => {
   try {
-    const data = await AccountsModel.findById(req.params.id);
+    const account = await AccountsModel.findById(req.params.id);
 
-    return res.status(200).json(data);
+    if (!account) {
+      return res.status(404).json({ message: "Account not found" });
+    }
+
+    // ✅ Sửa accountId -> accPay
+    const transactions = await TransactionsModel.find({
+      accPay: req.params.id,
+    }).sort({ createdAt: -1 });
+
+    const total_income = transactions
+      .filter((tx) => tx.transactionType === "income")
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    const total_expense = transactions
+      .filter((tx) => tx.transactionType === "expense")
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    const total_transactions = transactions.length;
+
+    const monthSet = new Set(
+      transactions.map((tx) => {
+        const d = new Date(tx.createdAt);
+        return `${d.getFullYear()}-${d.getMonth()}`;
+      })
+    );
+    const monthCount = monthSet.size || 1;
+    const monthly_average = (total_income + total_expense) / monthCount;
+
+    // ✅ Sửa dùng transactionType thay vì amount âm/dương
+    const recent_transactions = transactions.slice(0, 5).map((tx) => ({
+      id: tx._id,
+      description: tx.description,
+      createdAt: tx.createdAt,
+      amount: tx.amount,
+      type: tx.transactionType,
+    }));
+
+    const response = {
+      account: {
+        id: account._id,
+        name: account.name,
+        type: account.type,
+        icon: account.icon,
+        accountNumber: account.accountNumber,
+        balance: account.balance,
+        isPrimary: account.isPrimary,
+      },
+      summary: {
+        total_income,
+        total_expense,
+        monthly_average: Math.round(monthly_average),
+        total_transactions,
+      },
+      charts: {
+        trend_6_months: getLast6MonthsTrend(transactions),
+        income_expense_monthly: getLast6MonthsIncomeExpense(transactions),
+      },
+      recent_transactions,
+    };
+
+    return res.status(200).json(response);
   } catch (error) {
-    return res.status(500).json(error.message);
+    return res.status(500).json({ message: error.message });
   }
+};
+
+const getLast6MonthsTrend = (transactions) => {
+  const result = {};
+  const now = new Date();
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `T${d.getMonth() + 1}`;
+    result[key] = 0;
+  }
+
+  transactions.forEach((tx) => {
+    const d = new Date(tx.createdAt); // ✅ Sửa date -> createdAt
+    const key = `T${d.getMonth() + 1}`;
+    if (key in result) {
+      // ✅ Sửa dùng transactionType
+      result[key] += tx.transactionType === "income" ? tx.amount : -tx.amount;
+    }
+  });
+
+  return Object.entries(result).map(([month, value]) => ({ month, value }));
+};
+
+const getLast6MonthsIncomeExpense = (transactions) => {
+  const result = {};
+  const now = new Date();
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `T${d.getMonth() + 1}`;
+    result[key] = { month: key, income: 0, expense: 0 };
+  }
+
+  transactions.forEach((tx) => {
+    const d = new Date(tx.createdAt); // ✅ Sửa date -> createdAt
+    const key = `T${d.getMonth() + 1}`;
+    if (key in result) {
+      // ✅ Sửa dùng transactionType
+      if (tx.transactionType === "income") result[key].income += tx.amount;
+      else result[key].expense += tx.amount;
+    }
+  });
+
+  return Object.values(result);
 };
 
 export const updateAccount = async (req, res) => {
@@ -230,14 +335,20 @@ export const deleteAccount = async (req, res) => {
       return res.status(404).json({ message: "Tài khoản không tồn tại" });
     }
 
-    // ===== Xóa song song account + toàn bộ transactions liên quan =====
-    await Promise.all([
-      AccountsModel.findByIdAndDelete(id),
-      TransactionsModel.deleteMany({ accountId: id }),
-    ]);
+    // ===== Kiểm tra có giao dịch liên quan không =====
+    const transactionCount = await TransactionsModel.countDocuments({
+      accPay: id,
+    });
+    if (transactionCount > 0) {
+      return res.status(400).json({
+        message: `Không thể xóa tài khoản vì đang có ${transactionCount} giao dịch liên quan`,
+      });
+    }
+
+    await AccountsModel.findByIdAndDelete(id);
 
     return res.status(200).json({
-      message: "Xóa tài khoản và toàn bộ dữ liệu liên quan thành công",
+      message: "Xóa tài khoản thành công",
       deletedAccountId: id,
     });
   } catch (error) {
@@ -247,6 +358,7 @@ export const deleteAccount = async (req, res) => {
       .json({ message: "Lỗi server", error: error.message });
   }
 };
+
 export const deleteAllAccounts = async (req, res) => {
   try {
     const { userId } = req.params;
