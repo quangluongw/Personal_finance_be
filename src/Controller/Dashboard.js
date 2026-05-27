@@ -81,7 +81,7 @@ export const getDashboard = async (req, res) => {
             as: "category",
           },
         },
-        { $unwind: { path: "$category", preserveNullAndEmpty: true } },
+        { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
 
         // ── Stage 3: lookup Accounts ──
         {
@@ -92,7 +92,7 @@ export const getDashboard = async (req, res) => {
             as: "account",
           },
         },
-        { $unwind: { path: "$account", preserveNullAndEmpty: true } },
+        { $unwind: { path: "$account", preserveNullAndEmptyArrays: true } },
 
         // ── Stage 4: facet – tách song song trong 1 pipeline ──
         {
