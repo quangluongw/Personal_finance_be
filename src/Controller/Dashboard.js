@@ -1,43 +1,37 @@
 import { SavingsModel } from "../Model/Savings.js";
 import { TransactionsModel } from "../Model/Transactions.js";
-
 import mongoose from "mongoose";
 
 export const getDateRange = (type = "month", date) => {
-  let fromDate, toDate;
   const now = new Date();
 
   if (!date) {
-    if (type === "year") {
-      date = now.getFullYear().toString();
-    } else {
-      date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    }
+    date =
+      type === "year"
+        ? now.getFullYear().toString()
+        : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   }
+
+  let fromDate, toDate;
 
   if (type === "year") {
     const year = Number(date);
     if (isNaN(year)) throw new Error("Invalid year");
-
     fromDate = new Date(year, 0, 1, 0, 0, 0, 0);
     toDate = new Date(year, 11, 31, 23, 59, 59, 999);
   } else if (type === "week") {
     const baseDate = new Date(date);
     if (isNaN(baseDate)) throw new Error("Invalid week date");
-
     const day = baseDate.getDay() || 7;
-
     fromDate = new Date(baseDate);
     fromDate.setDate(baseDate.getDate() - day + 1);
     fromDate.setHours(0, 0, 0, 0);
-
     toDate = new Date(fromDate);
     toDate.setDate(fromDate.getDate() + 6);
     toDate.setHours(23, 59, 59, 999);
   } else {
     const [year, month] = date.split("-").map(Number);
     if (!year || !month) throw new Error("Invalid month");
-
     fromDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
     toDate = new Date(year, month, 0, 23, 59, 59, 999);
   }
@@ -49,173 +43,186 @@ export const getDashboard = async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.params.id);
     const { type = "month", date } = req.query;
-
-    /* ===============================
-     *  Filter thời gian
-     * =============================== */
     const { fromDate, toDate } = getDateRange(type, date);
 
-    const dateFilter = {
-      createdAt: { $gte: fromDate, $lte: toDate },
-    };
+    const dateFilter = { createdAt: { $gte: fromDate, $lte: toDate } };
+    const baseMatch = { userId, ...dateFilter };
 
-    /* ===============================
-     *  1. SUMMARY – Thu nhập / Chi tiêu / Số dư
-     * =============================== */
-    const summaryAgg = await TransactionsModel.aggregate([
-      { $match: { userId, ...dateFilter } },
-      {
-        $group: {
-          _id: "$transactionType",
-          total: { $sum: "$amount" },
+    /* ─── Build chart group expressions ─── */
+    const isYear = type === "year";
+    const groupTime = isYear
+      ? { month: { $month: "$createdAt" }, transactionType: "$transactionType" }
+      : {
+          day: { $dayOfMonth: "$createdAt" },
+          transactionType: "$transactionType",
+        };
+
+    const labelExpr = isYear
+      ? { $concat: ["Tháng ", { $toString: "$_id.month" }] }
+      : { $toString: "$_id.day" };
+
+    const sortStage = isYear ? { "_id.month": 1 } : { "_id.day": 1 };
+
+    /* ═══════════════════════════════════════════
+     *  Chạy tất cả query SONG SONG với Promise.all
+     * ═══════════════════════════════════════════ */
+    const [mainAgg, savingsGoals] = await Promise.all([
+      /* ── Aggregation duy nhất gộp Summary + Chart + Pie + Recent ── */
+      TransactionsModel.aggregate([
+        // ── Stage 1: match sớm nhất có thể (dùng compound index) ──
+        { $match: baseMatch },
+
+        // ── Stage 2: lookup Categories 1 lần cho tất cả ──
+        {
+          $lookup: {
+            from: "categories",
+            localField: "categoryId",
+            foreignField: "_id",
+            as: "category",
+          },
         },
-      },
+        { $unwind: { path: "$category", preserveNullAndEmpty: true } },
+
+        // ── Stage 3: lookup Accounts ──
+        {
+          $lookup: {
+            from: "accounts",
+            localField: "accPay",
+            foreignField: "_id",
+            as: "account",
+          },
+        },
+        { $unwind: { path: "$account", preserveNullAndEmpty: true } },
+
+        // ── Stage 4: facet – tách song song trong 1 pipeline ──
+        {
+          $facet: {
+            /* 4a. Summary */
+            summary: [
+              {
+                $group: {
+                  _id: "$transactionType",
+                  total: { $sum: "$amount" },
+                },
+              },
+            ],
+
+            /* 4b. Chart theo thời gian */
+            chart: [
+              {
+                $group: {
+                  _id: groupTime,
+                  total: { $sum: "$amount" },
+                },
+              },
+              {
+                $project: {
+                  label: labelExpr,
+                  transactionType: "$_id.transactionType",
+                  total: 1,
+                },
+              },
+              { $sort: sortStage },
+            ],
+
+            /* 4c. Pie – chi tiêu theo danh mục */
+            expenseByCategory: [
+              { $match: { transactionType: "expense" } },
+              {
+                $group: {
+                  _id: {
+                    categoryId: "$category._id",
+                    categoryName: "$category.name",
+                  },
+                  total: { $sum: "$amount" },
+                },
+              },
+              {
+                $project: {
+                  _id: 0,
+                  categoryId: "$_id.categoryId",
+                  categoryName: "$_id.categoryName",
+                  total: 1,
+                },
+              },
+              { $sort: { total: -1 } },
+            ],
+
+            /* 4d. Recent transactions – top 10 mới nhất */
+            recentTransactions: [
+              { $sort: { createdAt: -1 } },
+              { $limit: 10 },
+              {
+                $project: {
+                  transactionType: 1,
+                  amount: 1,
+                  description: 1,
+                  createdAt: 1,
+                  updatedAt: 1,
+                  category: {
+                    $cond: {
+                      if: { $ifNull: ["$category._id", false] },
+                      then: { _id: "$category._id", name: "$category.name" },
+                      else: null,
+                    },
+                  },
+                  account: {
+                    $cond: {
+                      if: { $ifNull: ["$account._id", false] },
+                      then: { _id: "$account._id", name: "$account.name" },
+                      else: null,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ]),
+
+      /* ── Savings: query riêng vì khác collection, không có dateFilter ── */
+      SavingsModel.find(
+        { userId },
+        {
+          name: 1,
+          description: 1,
+          targetAmount: 1,
+          currentAmount: 1,
+        }
+      ).lean(),
     ]);
 
-    let income = 0;
-    let expense = 0;
+    /* ─── Unpack facet results ─── */
+    const {
+      summary,
+      chart: chartRaw,
+      expenseByCategory,
+      recentTransactions,
+    } = mainAgg[0];
 
-    summaryAgg.forEach((i) => {
+    /* Summary */
+    let income = 0,
+      expense = 0;
+    summary.forEach((i) => {
       if (i._id === "income") income = i.total;
       if (i._id === "expense") expense = i.total;
     });
 
-    const balance = income - expense;
-
-    /* ===============================
-     *  2. CHART – Thu / Chi theo thời gian
-     * =============================== */
-    let groupTime = {};
-    let labelExpr = {};
-    let sortStage = {};
-
-    if (type === "week" || type === "month") {
-      groupTime = {
-        day: { $dayOfMonth: "$createdAt" },
-        transactionType: "$transactionType",
-      };
-      labelExpr = { $toString: "$_id.day" };
-      sortStage = { "_id.day": 1 };
-    } else {
-      // year
-      groupTime = {
-        month: { $month: "$createdAt" },
-        transactionType: "$transactionType",
-      };
-      labelExpr = {
-        $concat: ["Tháng ", { $toString: "$_id.month" }],
-      };
-      sortStage = { "_id.month": 1 };
-    }
-
-    const chartAgg = await TransactionsModel.aggregate([
-      { $match: { userId, ...dateFilter } },
-      {
-        $group: {
-          _id: groupTime,
-          total: { $sum: "$amount" },
-        },
-      },
-      {
-        $project: {
-          label: labelExpr,
-          transactionType: "$_id.transactionType",
-          total: 1,
-        },
-      },
-      { $sort: sortStage },
-    ]);
-
+    /* Chart */
     const chartMap = {};
-    chartAgg.forEach((item) => {
-      if (!chartMap[item.label]) {
-        chartMap[item.label] = { label: item.label, income: 0, expense: 0 };
-      }
-      chartMap[item.label][item.transactionType] = item.total;
+    chartRaw.forEach(({ label, transactionType, total }) => {
+      if (!chartMap[label]) chartMap[label] = { label, income: 0, expense: 0 };
+      chartMap[label][transactionType] = total;
     });
-
     const chart = Object.values(chartMap);
 
-    /* ===============================
-     *  3. PIE – Chi tiêu theo danh mục
-     * =============================== */
-    // Filter theo userId trên Transactions (không filter trên Categories vì bảng đó không có userId)
-    const expenseByCategory = await TransactionsModel.aggregate([
-      {
-        $match: {
-          userId, // lọc giao dịch của user
-          transactionType: "expense",
-          ...dateFilter,
-        },
-      },
-      {
-        $group: {
-          _id: "$categoryId",
-          total: { $sum: "$amount" },
-        },
-      },
-      {
-        $lookup: {
-          from: "categories",
-          localField: "_id",
-          foreignField: "_id",
-          as: "category",
-        },
-      },
-      { $unwind: "$category" },
-      {
-        $project: {
-          _id: 0,
-          categoryId: "$category._id",
-          categoryName: "$category.name",
-          total: 1,
-        },
-      },
-      { $sort: { total: -1 } },
-    ]);
-
-    /* ===============================
-     *  4. RECENT TRANSACTIONS
-     *  Populate: categoryId (name), accPay (account name)
-     * =============================== */
-    const recentTransactions = await TransactionsModel.find({
-      userId,
-      ...dateFilter,
-    })
-      .populate("categoryId", "name") // Categories.name
-      .populate("accPay", "name accountType") // Accounts.name + accountType (nếu có)
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
-
-    // Chuẩn hóa output cho frontend
-    const formattedTransactions = recentTransactions.map((tx) => ({
-      _id: tx._id,
-      transactionType: tx.transactionType,
-      amount: tx.amount,
-      description: tx.description,
-      category: tx.categoryId
-        ? { _id: tx.categoryId._id, name: tx.categoryId.name }
-        : null,
-      account: tx.accPay ? { _id: tx.accPay._id, name: tx.accPay.name } : null,
-      createdAt: tx.createdAt,
-      updatedAt: tx.updatedAt,
-    }));
-
-    /* ===============================
-     *  5. SAVINGS GOALS
-     *  Trả đủ các trường: name, targetAmount, currentAmount, description
-     *  + tính thêm % tiến độ cho frontend
-     * =============================== */
-    const savingsGoals = await SavingsModel.find({ userId }).lean();
-
+    /* Savings */
     const formattedSavings = savingsGoals.map((s) => ({
       _id: s._id,
       name: s.name,
       description: s.description,
       targetAmount: s.targetAmount,
       currentAmount: s.currentAmount,
-      // Phần trăm hoàn thành, giới hạn 0–100
       progress:
         s.targetAmount > 0
           ? Math.min(100, Math.round((s.currentAmount / s.targetAmount) * 100))
@@ -223,22 +230,17 @@ export const getDashboard = async (req, res) => {
       remaining: Math.max(0, s.targetAmount - s.currentAmount),
     }));
 
-    /* ===============================
-     *  RESPONSE
-     * =============================== */
+    /* ─── Response ─── */
     res.status(200).json({
       filter: { type, fromDate, toDate },
-      summary: { income, expense, balance },
+      summary: { income, expense, balance: income - expense },
       chart,
       expenseByCategory,
-      recentTransactions: formattedTransactions,
+      recentTransactions,
       savingsGoals: formattedSavings,
     });
   } catch (error) {
     console.error("Dashboard error:", error.message);
-    res.status(500).json({
-      message: "Dashboard error",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Dashboard error", error: error.message });
   }
 };
