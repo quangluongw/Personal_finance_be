@@ -1,5 +1,9 @@
 import { SavingsModel } from "../Model/Savings.js";
+<<<<<<< HEAD
 import { TransactionsModel } from "../Model/Transactions.js";
+=======
+import { TransactionsModel } from "../Model/Transactions";
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
 
 import mongoose from "mongoose";
 
@@ -60,7 +64,11 @@ export const getDashboard = async (req, res) => {
     };
 
     /* ===============================
+<<<<<<< HEAD
      *  1. SUMMARY – Thu nhập / Chi tiêu / Số dư
+=======
+     *  1. SUMMARY
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
      * =============================== */
     const summaryAgg = await TransactionsModel.aggregate([
       { $match: { userId, ...dateFilter } },
@@ -83,13 +91,30 @@ export const getDashboard = async (req, res) => {
     const balance = income - expense;
 
     /* ===============================
+<<<<<<< HEAD
      *  2. CHART – Thu / Chi theo thời gian
+=======
+     *  2. CHART – LOGIC ĐÚNG
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
      * =============================== */
     let groupTime = {};
     let labelExpr = {};
     let sortStage = {};
 
+<<<<<<< HEAD
     if (type === "week" || type === "month") {
+=======
+    if (type === "week") {
+      // Các NGÀY trong tuần
+      groupTime = {
+        day: { $dayOfMonth: "$createdAt" },
+        transactionType: "$transactionType",
+      };
+      labelExpr = { $toString: "$_id.day" };
+      sortStage = { "_id.day": 1 };
+    } else if (type === "month") {
+      // Các NGÀY trong tháng
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
       groupTime = {
         day: { $dayOfMonth: "$createdAt" },
         transactionType: "$transactionType",
@@ -97,7 +122,11 @@ export const getDashboard = async (req, res) => {
       labelExpr = { $toString: "$_id.day" };
       sortStage = { "_id.day": 1 };
     } else {
+<<<<<<< HEAD
       // year
+=======
+      // Các THÁNG trong năm
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
       groupTime = {
         month: { $month: "$createdAt" },
         transactionType: "$transactionType",
@@ -129,7 +158,15 @@ export const getDashboard = async (req, res) => {
     const chartMap = {};
     chartAgg.forEach((item) => {
       if (!chartMap[item.label]) {
+<<<<<<< HEAD
         chartMap[item.label] = { label: item.label, income: 0, expense: 0 };
+=======
+        chartMap[item.label] = {
+          label: item.label,
+          income: 0,
+          expense: 0,
+        };
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
       }
       chartMap[item.label][item.transactionType] = item.total;
     });
@@ -137,6 +174,7 @@ export const getDashboard = async (req, res) => {
     const chart = Object.values(chartMap);
 
     /* ===============================
+<<<<<<< HEAD
      *  3. PIE – Chi tiêu theo danh mục
      * =============================== */
     // Filter theo userId trên Transactions (không filter trên Categories vì bảng đó không có userId)
@@ -144,6 +182,14 @@ export const getDashboard = async (req, res) => {
       {
         $match: {
           userId, // lọc giao dịch của user
+=======
+     *  3. PIE – CHI TIÊU THEO DANH MỤC
+     * =============================== */
+    const expenseByCategory = await TransactionsModel.aggregate([
+      {
+        $match: {
+          userId,
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
           transactionType: "expense",
           ...dateFilter,
         },
@@ -171,23 +217,34 @@ export const getDashboard = async (req, res) => {
           total: 1,
         },
       },
+<<<<<<< HEAD
       { $sort: { total: -1 } },
+=======
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
     ]);
 
     /* ===============================
      *  4. RECENT TRANSACTIONS
+<<<<<<< HEAD
      *  Populate: categoryId (name), accPay (account name)
+=======
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
      * =============================== */
     const recentTransactions = await TransactionsModel.find({
       userId,
       ...dateFilter,
     })
+<<<<<<< HEAD
       .populate("categoryId", "name") // Categories.name
       .populate("accPay", "name accountType") // Accounts.name + accountType (nếu có)
+=======
+      .populate("categoryId", "name")
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
       .sort({ createdAt: -1 })
       .limit(10)
       .lean();
 
+<<<<<<< HEAD
     // Chuẩn hóa output cho frontend
     const formattedTransactions = recentTransactions.map((tx) => ({
       _id: tx._id,
@@ -223,6 +280,13 @@ export const getDashboard = async (req, res) => {
       remaining: Math.max(0, s.targetAmount - s.currentAmount),
     }));
 
+=======
+    /* ===============================
+     *  5. SAVINGS
+     * =============================== */
+    const savingsGoals = await SavingsModel.find({ userId }).lean();
+
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
     /* ===============================
      *  RESPONSE
      * =============================== */
@@ -231,8 +295,13 @@ export const getDashboard = async (req, res) => {
       summary: { income, expense, balance },
       chart,
       expenseByCategory,
+<<<<<<< HEAD
       recentTransactions: formattedTransactions,
       savingsGoals: formattedSavings,
+=======
+      recentTransactions,
+      savingsGoals,
+>>>>>>> bf7ad89cff96347eb039dc457340e6962b24419e
     });
   } catch (error) {
     console.error("Dashboard error:", error.message);
