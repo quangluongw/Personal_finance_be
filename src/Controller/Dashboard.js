@@ -5,24 +5,17 @@ import mongoose from "mongoose";
 export const getDateRange = (type = "month", date) => {
   const now = new Date();
 
-  if (!date) {
-    date =
-      type === "year"
-        ? now.getFullYear().toString()
-        : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  }
-
   let fromDate, toDate;
 
   if (type === "year") {
-    const year = Number(date);
+    const year = date ? Number(date) : now.getFullYear();
     if (isNaN(year)) throw new Error("Invalid year");
     fromDate = new Date(year, 0, 1, 0, 0, 0, 0);
     toDate = new Date(year, 11, 31, 23, 59, 59, 999);
   } else if (type === "week") {
-    const baseDate = new Date(date);
+    const baseDate = date ? new Date(date) : now;
     if (isNaN(baseDate)) throw new Error("Invalid week date");
-    const day = baseDate.getDay() || 7;
+    const day = baseDate.getDay() === 0 ? 7 : baseDate.getDay(); // 1=Mon ... 7=Sun
     fromDate = new Date(baseDate);
     fromDate.setDate(baseDate.getDate() - day + 1);
     fromDate.setHours(0, 0, 0, 0);
@@ -30,7 +23,11 @@ export const getDateRange = (type = "month", date) => {
     toDate.setDate(fromDate.getDate() + 6);
     toDate.setHours(23, 59, 59, 999);
   } else {
-    const [year, month] = date.split("-").map(Number);
+    // month (default)
+    const str =
+      date ||
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [year, month] = str.split("-").map(Number);
     if (!year || !month) throw new Error("Invalid month");
     fromDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
     toDate = new Date(year, month, 0, 23, 59, 59, 999);
@@ -45,34 +42,52 @@ export const getDashboard = async (req, res) => {
     const { type = "month", date } = req.query;
     const { fromDate, toDate } = getDateRange(type, date);
 
-    const dateFilter = { createdAt: { $gte: fromDate, $lte: toDate } };
-    const baseMatch = { userId, ...dateFilter };
+    const baseMatch = {
+      userId,
+      createdAt: { $gte: fromDate, $lte: toDate },
+    };
 
-    /* ─── Build chart group expressions ─── */
+    /* ─── Chart grouping theo type ─── */
     const isYear = type === "year";
+    const isWeek = type === "week";
+
+    // Năm  → nhóm theo tháng
+    // Tuần → nhóm theo thứ (dayOfWeek: 1=Sun…7=Sat → đổi sang 1=Mon…7=Sun)
+    // Tháng→ nhóm theo ngày
     const groupTime = isYear
       ? { month: { $month: "$createdAt" }, transactionType: "$transactionType" }
-      : {
-          day: { $dayOfMonth: "$createdAt" },
-          transactionType: "$transactionType",
-        };
+      : isWeek
+        ? {
+            dow: { $dayOfWeek: "$createdAt" },
+            transactionType: "$transactionType",
+          }
+        : {
+            day: { $dayOfMonth: "$createdAt" },
+            transactionType: "$transactionType",
+          };
 
     const labelExpr = isYear
       ? { $concat: ["Tháng ", { $toString: "$_id.month" }] }
-      : { $toString: "$_id.day" };
+      : isWeek
+        ? {
+            $arrayElemAt: [
+              ["CN", "T2", "T3", "T4", "T5", "T6", "T7"],
+              { $subtract: ["$_id.dow", 1] },
+            ],
+          }
+        : { $toString: "$_id.day" };
 
-    const sortStage = isYear ? { "_id.month": 1 } : { "_id.day": 1 };
+    const sortStage = isYear
+      ? { "_id.month": 1 }
+      : isWeek
+        ? { "_id.dow": 1 }
+        : { "_id.day": 1 };
 
-    /* ═══════════════════════════════════════════
-     *  Chạy tất cả query SONG SONG với Promise.all
-     * ═══════════════════════════════════════════ */
+    /* ─── Chạy song song ─── */
     const [mainAgg, savingsGoals] = await Promise.all([
-      /* ── Aggregation duy nhất gộp Summary + Chart + Pie + Recent ── */
       TransactionsModel.aggregate([
-        // ── Stage 1: match sớm nhất có thể (dùng compound index) ──
         { $match: baseMatch },
 
-        // ── Stage 2: lookup Categories 1 lần cho tất cả ──
         {
           $lookup: {
             from: "categories",
@@ -83,7 +98,6 @@ export const getDashboard = async (req, res) => {
         },
         { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
 
-        // ── Stage 3: lookup Accounts ──
         {
           $lookup: {
             from: "accounts",
@@ -94,10 +108,9 @@ export const getDashboard = async (req, res) => {
         },
         { $unwind: { path: "$account", preserveNullAndEmptyArrays: true } },
 
-        // ── Stage 4: facet – tách song song trong 1 pipeline ──
         {
           $facet: {
-            /* 4a. Summary */
+            /* Summary */
             summary: [
               {
                 $group: {
@@ -107,7 +120,7 @@ export const getDashboard = async (req, res) => {
               },
             ],
 
-            /* 4b. Chart theo thời gian */
+            /* Chart */
             chart: [
               {
                 $group: {
@@ -125,7 +138,7 @@ export const getDashboard = async (req, res) => {
               { $sort: sortStage },
             ],
 
-            /* 4c. Pie – chi tiêu theo danh mục */
+            /* Pie – chi tiêu theo danh mục */
             expenseByCategory: [
               { $match: { transactionType: "expense" } },
               {
@@ -148,7 +161,7 @@ export const getDashboard = async (req, res) => {
               { $sort: { total: -1 } },
             ],
 
-            /* 4d. Recent transactions – top 10 mới nhất */
+            /* 10 giao dịch gần nhất */
             recentTransactions: [
               { $sort: { createdAt: -1 } },
               { $limit: 10 },
@@ -180,19 +193,13 @@ export const getDashboard = async (req, res) => {
         },
       ]),
 
-      /* ── Savings: query riêng vì khác collection, không có dateFilter ── */
       SavingsModel.find(
         { userId },
-        {
-          name: 1,
-          description: 1,
-          targetAmount: 1,
-          currentAmount: 1,
-        }
+        { name: 1, description: 1, targetAmount: 1, currentAmount: 1 }
       ).lean(),
     ]);
 
-    /* ─── Unpack facet results ─── */
+    /* ─── Unpack ─── */
     const {
       summary,
       chart: chartRaw,
@@ -200,15 +207,15 @@ export const getDashboard = async (req, res) => {
       recentTransactions,
     } = mainAgg[0];
 
-    /* Summary */
+    // Summary
     let income = 0,
       expense = 0;
-    summary.forEach((i) => {
-      if (i._id === "income") income = i.total;
-      if (i._id === "expense") expense = i.total;
+    summary.forEach(({ _id, total }) => {
+      if (_id === "income") income = total;
+      if (_id === "expense") expense = total;
     });
 
-    /* Chart */
+    // Chart
     const chartMap = {};
     chartRaw.forEach(({ label, transactionType, total }) => {
       if (!chartMap[label]) chartMap[label] = { label, income: 0, expense: 0 };
@@ -216,8 +223,8 @@ export const getDashboard = async (req, res) => {
     });
     const chart = Object.values(chartMap);
 
-    /* Savings */
-    const formattedSavings = savingsGoals.map((s) => ({
+    // Savings
+    const savingsGoalsFormatted = savingsGoals.map((s) => ({
       _id: s._id,
       name: s.name,
       description: s.description,
@@ -230,14 +237,13 @@ export const getDashboard = async (req, res) => {
       remaining: Math.max(0, s.targetAmount - s.currentAmount),
     }));
 
-    /* ─── Response ─── */
     res.status(200).json({
       filter: { type, fromDate, toDate },
       summary: { income, expense, balance: income - expense },
       chart,
       expenseByCategory,
       recentTransactions,
-      savingsGoals: formattedSavings,
+      savingsGoals: savingsGoalsFormatted,
     });
   } catch (error) {
     console.error("Dashboard error:", error.message);
