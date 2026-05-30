@@ -1,3 +1,41 @@
+import { SavingsModel } from "../Model/Savings.js";
+import { TransactionsModel } from "../Model/Transactions.js";
+import mongoose from "mongoose";
+
+export const getDateRange = (type = "month", date) => {
+  const now = new Date();
+
+  let fromDate, toDate;
+
+  if (type === "year") {
+    const year = date ? Number(date) : now.getFullYear();
+    if (isNaN(year)) throw new Error("Invalid year");
+    fromDate = new Date(year, 0, 1, 0, 0, 0, 0);
+    toDate = new Date(year, 11, 31, 23, 59, 59, 999);
+  } else if (type === "week") {
+    const baseDate = date ? new Date(date) : now;
+    if (isNaN(baseDate)) throw new Error("Invalid week date");
+    const day = baseDate.getDay() === 0 ? 7 : baseDate.getDay(); // 1=Mon ... 7=Sun
+    fromDate = new Date(baseDate);
+    fromDate.setDate(baseDate.getDate() - day + 1);
+    fromDate.setHours(0, 0, 0, 0);
+    toDate = new Date(fromDate);
+    toDate.setDate(fromDate.getDate() + 6);
+    toDate.setHours(23, 59, 59, 999);
+  } else {
+    // month (default)
+    const str =
+      date ||
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [year, month] = str.split("-").map(Number);
+    if (!year || !month) throw new Error("Invalid month");
+    fromDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    toDate = new Date(year, month, 0, 23, 59, 59, 999);
+  }
+
+  return { fromDate, toDate };
+};
+
 export const getDashboard = async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.params.id);
@@ -9,9 +47,13 @@ export const getDashboard = async (req, res) => {
       createdAt: { $gte: fromDate, $lte: toDate },
     };
 
+    /* ─── Chart grouping theo type ─── */
     const isYear = type === "year";
     const isWeek = type === "week";
 
+    // Năm  → nhóm theo tháng
+    // Tuần → nhóm theo thứ (dayOfWeek: 1=Sun…7=Sat → đổi sang 1=Mon…7=Sun)
+    // Tháng→ nhóm theo ngày
     const groupTime = isYear
       ? { month: { $month: "$createdAt" }, transactionType: "$transactionType" }
       : isWeek
@@ -41,9 +83,11 @@ export const getDashboard = async (req, res) => {
         ? { "_id.dow": 1 }
         : { "_id.day": 1 };
 
+    /* ─── Chạy song song ─── */
     const [mainAgg, savingsGoals] = await Promise.all([
       TransactionsModel.aggregate([
         { $match: baseMatch },
+
         {
           $lookup: {
             from: "categories",
@@ -53,6 +97,7 @@ export const getDashboard = async (req, res) => {
           },
         },
         { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+
         {
           $lookup: {
             from: "accounts",
@@ -62,15 +107,27 @@ export const getDashboard = async (req, res) => {
           },
         },
         { $unwind: { path: "$account", preserveNullAndEmptyArrays: true } },
+
         {
           $facet: {
+            /* Summary */
             summary: [
               {
-                $group: { _id: "$transactionType", total: { $sum: "$amount" } },
+                $group: {
+                  _id: "$transactionType",
+                  total: { $sum: "$amount" },
+                },
               },
             ],
+
+            /* Chart */
             chart: [
-              { $group: { _id: groupTime, total: { $sum: "$amount" } } },
+              {
+                $group: {
+                  _id: groupTime,
+                  total: { $sum: "$amount" },
+                },
+              },
               {
                 $project: {
                   label: labelExpr,
@@ -80,6 +137,8 @@ export const getDashboard = async (req, res) => {
               },
               { $sort: sortStage },
             ],
+
+            /* Pie – chi tiêu theo danh mục */
             expenseByCategory: [
               { $match: { transactionType: "expense" } },
               {
@@ -101,6 +160,8 @@ export const getDashboard = async (req, res) => {
               },
               { $sort: { total: -1 } },
             ],
+
+            /* 10 giao dịch gần nhất */
             recentTransactions: [
               { $sort: { createdAt: -1 } },
               { $limit: 10 },
@@ -138,6 +199,7 @@ export const getDashboard = async (req, res) => {
       ).lean(),
     ]);
 
+    /* ─── Unpack ─── */
     const {
       summary,
       chart: chartRaw,
@@ -145,6 +207,7 @@ export const getDashboard = async (req, res) => {
       recentTransactions,
     } = mainAgg[0];
 
+    // Summary
     let income = 0,
       expense = 0;
     summary.forEach(({ _id, total }) => {
@@ -152,12 +215,15 @@ export const getDashboard = async (req, res) => {
       if (_id === "expense") expense = total;
     });
 
+    // Chart
     const chartMap = {};
     chartRaw.forEach(({ label, transactionType, total }) => {
       if (!chartMap[label]) chartMap[label] = { label, income: 0, expense: 0 };
       chartMap[label][transactionType] = total;
     });
+    const chart = Object.values(chartMap);
 
+    // Savings
     const savingsGoalsFormatted = savingsGoals.map((s) => ({
       _id: s._id,
       name: s.name,
@@ -174,7 +240,7 @@ export const getDashboard = async (req, res) => {
     res.status(200).json({
       filter: { type, fromDate, toDate },
       summary: { income, expense, balance: income - expense },
-      chart: Object.values(chartMap),
+      chart,
       expenseByCategory,
       recentTransactions,
       savingsGoals: savingsGoalsFormatted,
