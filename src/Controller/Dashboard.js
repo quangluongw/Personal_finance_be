@@ -1,6 +1,6 @@
-import { SavingsModel } from "../Model/Savings.js";
-import { TransactionsModel } from "../Model/Transactions.js";
 import mongoose from "mongoose";
+import { TransactionsModel } from "../Model/Transactions";
+import { SavingsModel } from "../Model/Savings";
 
 export const getDateRange = (type = "month", date) => {
   const now = new Date();
@@ -15,7 +15,7 @@ export const getDateRange = (type = "month", date) => {
   } else if (type === "week") {
     const baseDate = date ? new Date(date) : now;
     if (isNaN(baseDate)) throw new Error("Invalid week date");
-    const day = baseDate.getDay() === 0 ? 7 : baseDate.getDay(); // 1=Mon ... 7=Sun
+    const day = baseDate.getDay() === 0 ? 7 : baseDate.getDay();
     fromDate = new Date(baseDate);
     fromDate.setDate(baseDate.getDate() - day + 1);
     fromDate.setHours(0, 0, 0, 0);
@@ -23,7 +23,6 @@ export const getDateRange = (type = "month", date) => {
     toDate.setDate(fromDate.getDate() + 6);
     toDate.setHours(23, 59, 59, 999);
   } else {
-    // month (default)
     const str =
       date ||
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -38,7 +37,18 @@ export const getDateRange = (type = "month", date) => {
 
 export const getDashboard = async (req, res) => {
   try {
-    const userId = new mongoose.Types.ObjectId(req.params.id);
+    // ─── Validate userId ───
+    const rawId = req.params.id;
+
+    if (!rawId) {
+      return res.status(400).json({ message: "Thiếu user ID" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(rawId)) {
+      return res.status(400).json({ message: "User ID không hợp lệ" });
+    }
+
+    const userId = new mongoose.Types.ObjectId(rawId);
     const { type = "month", date } = req.query;
     const { fromDate, toDate } = getDateRange(type, date);
 
@@ -51,9 +61,6 @@ export const getDashboard = async (req, res) => {
     const isYear = type === "year";
     const isWeek = type === "week";
 
-    // Năm  → nhóm theo tháng
-    // Tuần → nhóm theo thứ (dayOfWeek: 1=Sun…7=Sat → đổi sang 1=Mon…7=Sun)
-    // Tháng→ nhóm theo ngày
     const groupTime = isYear
       ? { month: { $month: "$createdAt" }, transactionType: "$transactionType" }
       : isWeek
